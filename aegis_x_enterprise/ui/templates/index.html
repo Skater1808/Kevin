@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis-X Enterprise — Control Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .console-scroll::-webkit-scrollbar { width: 8px; }
+    .console-scroll::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+    .live-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+  </style>
+</head>
+<body class="h-full bg-slate-950 text-slate-200 font-sans">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">
+          Aegis-X <span class="text-indigo-400">Enterprise</span>
+        </h1>
+        <p class="text-sm text-slate-400">Autonomous self-healing engineering agent</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="ws-dot" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+        <span id="ws-label" class="text-xs uppercase tracking-wide text-slate-400">disconnected</span>
+        <span id="state-badge"
+          class="ml-4 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">IDLE</span>
+      </div>
+    </header>
+
+    <section class="bg-slate-900/70 border border-slate-800 rounded-xl p-4 mb-6">
+      <label for="goal" class="block text-xs uppercase tracking-wide text-slate-400 mb-2">Mission goal</label>
+      <textarea id="goal" rows="2"
+        class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        placeholder="e.g. Create a Python script that prints the first 20 Fibonacci numbers and verify it runs."></textarea>
+      <div class="flex flex-wrap gap-3 mt-3">
+        <button id="btn-start"
+          class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition">▶ Start</button>
+        <button id="btn-pause"
+          class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition">⏸ Pause</button>
+        <button id="btn-resume"
+          class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition">⏵ Resume</button>
+        <button id="btn-stop"
+          class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition">⏹ Emergency Stop</button>
+      </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <section class="lg:col-span-2 bg-black border border-slate-800 rounded-xl overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/60">
+          <h2 class="text-sm font-semibold text-slate-300">Live Console</h2>
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span class="live-dot w-2 h-2 rounded-full bg-emerald-400"></span> streaming
+          </div>
+        </div>
+        <div id="console" class="console-scroll flex-1 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed h-[520px]"></div>
+      </section>
+
+      <section class="bg-slate-900/70 border border-slate-800 rounded-xl p-4">
+        <h2 class="text-sm font-semibold text-slate-300 mb-1">Task Tree</h2>
+        <p id="iteration-info" class="text-xs text-slate-500 mb-3">Iterations: 0 / 0</p>
+        <ul id="task-list" class="space-y-2">
+          <li class="text-sm text-slate-500 italic">No tasks yet. Start a mission.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const consoleEl = document.getElementById("console");
+    const taskListEl = document.getElementById("task-list");
+    const stateBadge = document.getElementById("state-badge");
+    const iterationInfo = document.getElementById("iteration-info");
+    const wsDot = document.getElementById("ws-dot");
+    const wsLabel = document.getElementById("ws-label");
+
+    const stateColors = {
+      IDLE: "bg-slate-800 text-slate-300",
+      PLANNING: "bg-blue-900 text-blue-300",
+      EXECUTING: "bg-indigo-900 text-indigo-300",
+      TESTING: "bg-purple-900 text-purple-300",
+      HEALING: "bg-amber-900 text-amber-300",
+      COMPLETED: "bg-emerald-900 text-emerald-300",
+      FAILED: "bg-red-900 text-red-300",
+    };
+    const levelColors = {
+      info: "text-slate-300", debug: "text-slate-500",
+      warning: "text-amber-400", error: "text-red-400",
+    };
+    const statusIcon = {
+      PENDING: "<span class='text-slate-500'>○</span>",
+      RUNNING: "<span class='text-indigo-400'>◐</span>",
+      DONE: "<span class='text-emerald-400'>✔</span>",
+      FAILED: "<span class='text-red-400'>✖</span>",
+    };
+
+    function appendLine(text, level) {
+      const line = document.createElement("div");
+      const ts = new Date().toLocaleTimeString();
+      line.className = (levelColors[level] || "text-slate-300") + " whitespace-pre-wrap break-words";
+      line.textContent = `[${ts}] ${text}`;
+      consoleEl.appendChild(line);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function setState(state) {
+      stateBadge.textContent = state;
+      stateBadge.className = "ml-4 px-3 py-1 rounded-full text-xs font-semibold " +
+        (stateColors[state] || stateColors.IDLE);
+    }
+
+    function renderTasks(snapshot) {
+      if (!snapshot) return;
+      iterationInfo.textContent = `Iterations: ${snapshot.iteration_count} / ${snapshot.max_iterations}`;
+      const tasks = snapshot.task_tree || [];
+      if (tasks.length === 0) {
+        taskListEl.innerHTML = "<li class='text-sm text-slate-500 italic'>No tasks yet. Start a mission.</li>";
+        return;
+      }
+      taskListEl.innerHTML = "";
+      tasks.forEach((t) => {
+        const li = document.createElement("li");
+        li.className = "text-sm flex items-start gap-2 p-2 rounded-lg bg-slate-950/60 border border-slate-800";
+        const err = (t.error_log && t.error_log.length)
+          ? `<div class='text-xs text-red-400 mt-1'>${t.error_log[t.error_log.length - 1]}</div>` : "";
+        li.innerHTML = `<div class="mt-0.5">${statusIcon[t.status] || ""}</div>
+          <div class="flex-1"><div class="${t.status === 'FAILED' ? 'text-red-300' : 'text-slate-200'}">${t.title}</div>${err}</div>`;
+        taskListEl.appendChild(li);
+      });
+    }
+
+    function handlePacket(packet) {
+      const p = packet.payload || {};
+      switch (packet.type) {
+        case "status":
+          setState(p.state);
+          appendLine(`STATE → ${p.state}${p.message ? " — " + p.message : ""}`, "info");
+          renderTasks(p.snapshot);
+          break;
+        case "task_update":
+          renderTasks(p.snapshot);
+          break;
+        case "error":
+          appendLine("ERROR: " + (p.message || "unknown"), "error");
+          break;
+        case "log":
+        default:
+          appendLine((p.tool ? `[${p.tool}] ` : "") + (p.message || ""), p.level || "info");
+      }
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws/logs`);
+      ws.onopen = () => { wsDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500"; wsLabel.textContent = "connected"; };
+      ws.onclose = () => {
+        wsDot.className = "w-2.5 h-2.5 rounded-full bg-red-500"; wsLabel.textContent = "reconnecting…";
+        setTimeout(connect, 1500);
+      };
+      ws.onmessage = (ev) => { try { handlePacket(JSON.parse(ev.data)); } catch (e) { appendLine(ev.data, "info"); } };
+    }
+
+    async function post(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : null,
+      });
+      return res.json();
+    }
+
+    document.getElementById("btn-start").onclick = async () => {
+      const goal = document.getElementById("goal").value.trim();
+      if (!goal) { appendLine("Please enter a mission goal.", "warning"); return; }
+      appendLine("Dispatching mission…", "info");
+      const r = await post("/start", { goal });
+      if (!r.started) appendLine("Agent is already running.", "warning");
+    };
+    document.getElementById("btn-pause").onclick = () => post("/pause");
+    document.getElementById("btn-resume").onclick = () => post("/resume");
+    document.getElementById("btn-stop").onclick = () => { appendLine("EMERGENCY STOP", "error"); post("/stop"); };
+
+    connect();
+    fetch("/api/state").then((r) => r.json()).then((s) => { setState(s.current_state); renderTasks(s); });
+  </script>
+</body>
+</html>

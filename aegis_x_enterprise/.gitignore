@@ -1,0 +1,18 @@
+# Secrets / generated config
+.env
+
+# Agent runtime artifacts
+agent/agent_state.json
+agent/history.db
+workspace/*
+!workspace/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
